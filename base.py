@@ -55,11 +55,11 @@ class ContextRNN(nn.Module):
 """
 input_size: size of context except word embedding
 embeddings: vocab_size*embed_size, type nn.Embedding
-context_size: size of context vector, must be 0 when concated=True
+context_size: size of context vector, must not be 0 when concated=True
 concated: whether concat context vector at each input step
 """
 class DecoderRNN(nn.Module):
-    def __init__(self, embeddings, hidden_size, context_size=0, concated=True):
+    def __init__(self, embeddings, hidden_size, context_size=0, concated=False):
         super().__init__()
         #parameters
         self.vocab_size, self.embed_size = embeddings.weight.size()
