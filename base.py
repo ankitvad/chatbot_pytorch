@@ -3,6 +3,7 @@ import torch.nn as nn
 import numpy as np
 from torch.autograd import Variable
 import inspect
+from dataload import *
 
 USE_CUDA = True
 
@@ -54,8 +55,8 @@ class ContextRNN(nn.Module):
 """
 input_size: size of context except word embedding
 embeddings: vocab_size*embed_size, type nn.Embedding
-contexted: whether exist context
-concated: whether concat context vector to each step
+context_size: size of context vector, must be 0 when concated=True
+concated: whether concat context vector at each input step
 """
 class DecoderRNN(nn.Module):
     def __init__(self, embeddings, hidden_size, context_size=0, concated=True):
@@ -133,27 +134,57 @@ class base(nn.Module):
             outputs[i] = new_h
         return outputs
 
-    #targets: max_len*batch_size
+    #sample gaussian latent variable
     def sample(self, mu, cov):
         e = Variable(torch.randn(mu.size()))
         return mu+e*torch.sqrt(cov)
 
-    #kl(p1||p2)
+    #kl(p1||p2): batch_size
     def kl(self, mu1, mu2, s1, s2):
         kl = 0.5 * (torch.sum(torch.log(torch.abs(s2)) - torch.log(torch.abs(s1)) + s1 / s2 + (mu2 - mu1) ** 2 / s2, 1) - mu1.size(1))
         return kl
     
+    #targets: max_len*batch_size
     #outputs: max_len*batch_size*vocab_size
     def cost(self, targets, outputs, loss=nn.CrossEntropyLoss()):
         t_loss=0
         mask = (targets>0).float()
         t_len=torch.sum(mask)
         for i in range(targets.size(0)):
-            t_loss+=torch.sum(loss(outputs[i], targets[i]))
+            t_loss+=targets.size(1)*loss(outputs[i], targets[i])
         return t_loss, t_loss/t_len
 
-    def train(self, loss):
+    def optimize(self, loss):
         self.optim.zero_grad()
         loss.backward()
         torch.nn.utils.clip_grad_norm(self.parameters(), 5)
         self.optim.step()
+    
+    def validate(self, dataloader):
+        t_loss = 0
+        for i, batch in enumerate(dataloader):
+            inputs = Variable(batch.t())
+            print(inputs.size())
+            c=self.cost(inputs, self(inputs))
+            t_loss += c[1].data.numpy()
+            print('[Validation]Mini-Batches run : %d\t\tBatch Loss: %f\t\tMean Loss: %f' % (i+1, c[1].data.numpy(), t_loss / (i+1)))
+        print('Final loss : %f' % (t_loss/len(dataloader)))
+        return t_loss/len(dataloader)
+
+    def train(self, dataloader, epoch):
+        start = (epoch-1)*len(dataloader)+1
+        for i, batch in enumerate(dataloader):
+            inputs = Variable(batch.t())
+            print(inputs.size())
+            c=self.cost(inputs, self(inputs))
+            print('[Training][Epoch: %d]Step : %d\tTotal Loss: %f\tMean Loss: %f' % (epoch, start+i, c[0].data.numpy(), c[1].data.numpy()))
+            self.optimize(c[0])
+    
+    def run_train(self, train_dialogs, valid_dialogs, num_epochs, b_size):
+        trained = dialogdata(train_dialogs)
+        validated = dialogdata(valid_dialogs)
+        for epoch in range(1,num_epochs+1):
+            train_dataloader = DataLoader(trained, batch_size=b_size, shuffle=True)
+            valid_dataloader = DataLoader(validated, batch_size=b_size, shuffle=True)
+            self.train(train_dataloader, epoch)
+            self.validate(valid_dataloader)

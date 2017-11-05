@@ -35,12 +35,15 @@ class seq2seq(base):
             outputs.append(o)
         return outputs#max_len*batch_size*vocab_size
 
-
 if __name__ == '__main__':
-    em=torch.ones((6,3))
+    em=torch.ones((9,3))
     s=seq2seq(em,3,3)
-    inputs=Variable(torch.ones((10,10)).long())
-    for batch in range(10):
-        c=s.cost(inputs, s(inputs))
-        print(c[0])
-        s.train(c[0])
+    dialogs = [[1,2,3,4,0,5,6,7] for i in range(20)]
+    print(dialogs)
+    trained = dialogdata(dialogs)
+    validated = dialogdata(dialogs)
+    for epoch in range(1,3):
+        train_dataloader = DataLoader(trained, batch_size=6, shuffle=True)
+        valid_dataloader = DataLoader(trained, batch_size=6, shuffle=True)
+        s.train(train_dataloader, epoch)
+        s.validate(valid_dataloader)

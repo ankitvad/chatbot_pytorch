@@ -27,12 +27,13 @@ class hred(base):
         e_hidden = Variable(torch.zeros(batch_size, self.encoder.hidden_size))
         c_hidden = Variable(torch.zeros(batch_size, self.crnn.hidden_size))
         d_hidden = Variable(torch.zeros(batch_size, self.decoder.hidden_size))
+        
         c_inputs = torch.cat((EOT*Variable(torch.ones((1, batch_size)).long()), inputs[:-1, :]))
         current_mask = (c_inputs!=EOT).float()
         r_inputs = torch.cat((EOT*Variable(torch.ones((1, batch_size)).long()), c_inputs[:-1, :]))
         rolled_mask = (r_inputs!=EOT).float()
         outputs=[]
-        for i in range(r_inputs.size(0)):
+        for i in range(c_inputs.size(0)):
             r_m = rolled_mask[i]
             r_m.data.unsqueeze_(1)
             e_hidden = self.encoder(c_inputs[i], e_hidden, r_m)
@@ -43,12 +44,15 @@ class hred(base):
             outputs.append(o)
         return outputs#max_len*batch_size*vocab_size
 
-
 if __name__ == '__main__':
-    em=torch.ones((6,3))
+    em=torch.ones((9,3))
     s=hred(em,3,3,3)
-    inputs=Variable(torch.ones((10,10)).long())
-    for batch in range(10):
-        c=s.cost(inputs, s(inputs))
-        print(c[0])
-        s.train(c[0])
+    dialogs = [[1,2,3,4,0,5,6,7] for i in range(20)]
+    print(dialogs)
+    trained = dialogdata(dialogs)
+    validated = dialogdata(dialogs)
+    for epoch in range(1,3):
+        train_dataloader = DataLoader(trained, batch_size=6, shuffle=True)
+        valid_dataloader = DataLoader(trained, batch_size=6, shuffle=True)
+        s.train(train_dataloader, epoch)
+        s.validate(valid_dataloader)

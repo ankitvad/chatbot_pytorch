@@ -21,7 +21,7 @@ class vhred(base):
         self.l_size = l_size
         self.encoder = EncoderRNN(self.embedding, h_size, masked=True)
         self.crnn = ContextRNN(h_size, c_size)
-        self.decoder = DecoderRNN(self.embedding, d_size, context_size=c_size+l_size, concated=True)
+        self.decoder = DecoderRNN(self.embedding, d_size, context_size=c_size+h_size, concated=True)
         
         self.prior = GaussPara(l_size, c_size)
         self.post = GaussPara(l_size, c_size+h_size)
@@ -77,7 +77,10 @@ class vhred(base):
             reconstructed = self.tanh(self.reconst(post_z))
             r_loss[i] = torch.sum((reconstructed - r_hs[i])**2, 1)*(1-current_mask[i])*0.5
             
-            d_hidden, o = self.decoder(inputs[i], d_hidden, torch.cat((cs[i], post_z), 1), c_m)
+            c_m = current_mask[i]
+            c_m.data.unsqueeze_(1)
+            
+            d_hidden, o = self.decoder(inputs[i], d_hidden, torch.cat((cs[i], reconstructed), 1), c_m)
             outputs.append(o)
         return outputs, kl, r_loss#outputs: max_len*batch_size*vocab_size; kl&r_loss: max_len*batch_size
 
@@ -96,7 +99,7 @@ class vhred(base):
         return t_loss, t_loss/t_len, t_kl, t_kl/num_eot, t_rloss, t_rloss/num_eot
 
     #state: wake or sleep
-    def train(self, loss, state):
+    def optimize(self, loss, state):
         loss.backward()
         torch.nn.utils.clip_grad_norm(self.parameters(), 5)
         if state=='wake':
@@ -119,6 +122,6 @@ if __name__ == '__main__':
         print(c[2])
         print(c[4])
         if batch%2==0:
-            s.train(c[0]+c[2]+c[4], 'wake')
+            s.optimize(c[0]+c[2]+c[4], 'wake')
         else:
-            s.train(c[0]+c[2]+c[4], 'sleep')
+            s.optimize(c[0]+c[2]+c[4], 'sleep')

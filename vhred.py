@@ -51,7 +51,8 @@ class vhred(base):
             c_m.data.unsqueeze_(1)
             cs.append(self.crnn(e_hidden, c_hidden, c_m))
             c_hidden = self.crnn(e_hidden, c_hidden, c_m)
-
+        
+        #r_hs stores the hidden state of posterior sequence
         r_hs = self.mask_state(hs, inputs)#max_len*batch_size*h_size
         for i in range(c_inputs.size(0)):
             c_h = torch.cat((cs[i], r_hs[i]), 1)
@@ -76,16 +77,42 @@ class vhred(base):
         r_input = torch.cat((EOT*Variable(torch.ones((1, targets.size(1))).long()), targets[:-1, :]))
         num_eot = torch.sum((r_input==EOT).float())
         for i in range(targets.size(0)):
-            t_loss+=torch.sum(loss(outputs[i], targets[i]))
+            t_loss+=targets.size(1)*loss(outputs[i], targets[i])
         return t_loss, t_loss/t_len, t_kl, t_kl/num_eot
 
+    def validate(self, dataloader):
+        t_loss = 0
+        t_kl = 0
+        for i, batch in enumerate(dataloader):
+            inputs = Variable(batch.t())
+            print(inputs.size())
+            o, kl = self(inputs)
+            c=self.cost(inputs, o, kl)
+            t_loss += c[1].data.numpy()
+            t_kl +=c[3].data.numpy()
+            print('[Validation]Mini-Batches run : %d\tBatch Loss: %f\tMean Loss: %f\tBatch KL: %f\tMean KL: %f' % (i+1, c[1].data.numpy(), t_loss / (i+1), c[3].data.numpy(), t_kl/(i+1)))
+        print('Final loss : %f\tkl: %f' % (t_loss/len(dataloader), t_kl/len(dataloader)))
+        return t_loss/len(dataloader), t_kl/len(dataloader)
+
+    def train(self, dataloader, epoch):
+        start = (epoch-1)*len(dataloader)+1
+        for i, batch in enumerate(dataloader):
+            inputs = Variable(batch.t())
+            print(inputs.size())
+            o, kl = self(inputs)
+            c=self.cost(inputs, o, kl)
+            print('[Training][Epoch: %d]Step : %d\tTotal Loss: %f\tMean Loss: %f\tTotal KL: %f\tMean KL: %f' % (epoch, start+i, c[0].data.numpy(), c[1].data.numpy(), c[2].data.numpy(), c[3].data.numpy()))
+            self.optimize(c[0]+c[2])
+
 if __name__ == '__main__':
-    em=torch.ones((6,3))
+    em=torch.ones((9,3))
     s=vhred(em,3,3,3,1)
-    inputs=Variable(torch.ones((10,10)).long())
-    for batch in range(10):
-        o, kl = s(inputs)
-        c=s.cost(inputs, o, kl)
-        print(c[0])
-        print(c[2])
-        s.train(c[0]+c[2])
+    dialogs = [[1,2,3,4,0,5,6,7] for i in range(20)]
+    print(dialogs)
+    trained = dialogdata(dialogs)
+    validated = dialogdata(dialogs)
+    for epoch in range(1,10):
+        train_dataloader = DataLoader(trained, batch_size=6, shuffle=True)
+        valid_dataloader = DataLoader(trained, batch_size=6, shuffle=True)
+        s.train(train_dataloader, epoch)
+        s.validate(valid_dataloader)

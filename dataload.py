@@ -30,6 +30,7 @@ def slice_dialog(dialog, limit=80):
             exs.append(dialogue[start:start + limit])
     return exs
 
+# dialogs: list of dialogs, each dialog is a list of word indexes
 def create_array(dialogs):
     d = []
     for dialog in dialogs:
