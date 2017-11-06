@@ -6,6 +6,20 @@ d_size: hidden size of decoder
 independence: whether sentences are independent
 """
 
+#hyper-parameters
+######################
+h_size=512#encoder hidden size
+c_size=1024#context hidden size
+d_size=512#decoder hidden size
+l_size=128#latent variable size
+b_size=128#batch size
+lr=0.0002#learning rate
+embed='./dataset/switchboard/embedding.mat'#pre-trained embedding
+train_pkl = './dataset/switchboard/train.pkl'#training set
+valid_pkl = './dataset/switchboard/valid.pkl'#validation set
+test_pkl = './dataset/switchboard/test.pkl'#validation set
+check_dir = './lm'#check point file
+######################
 class lm(base):
     def __init__(self, embeddings, d_size, independence=False, lr=0.0002):
         super().__init__()
@@ -38,14 +52,11 @@ class lm(base):
         return outputs#max_len*batch_size*vocab_size
     
 if __name__ == '__main__':
-    em=torch.ones((9,3))
-    s=lm(em,3,3)
-    dialogs = [[1,2,3,4,0,5,6,7] for i in range(20)]
-    print(dialogs)
-    trained = dialogdata(dialogs)
-    validated = dialogdata(dialogs)
-    for epoch in range(1,3):
-        train_dataloader = DataLoader(trained, batch_size=6, shuffle=True)
-        valid_dataloader = DataLoader(trained, batch_size=6, shuffle=True)
-        s.train(train_dataloader, epoch)
-        s.validate(valid_dataloader)
+    torch.set_default_tensor_type('torch.cuda.FloatTensor')
+    em =torch.from_numpy(pickle.load(open(embed, 'rb'), encoding='latin1'))
+    s=lm(em,d_size,independence=False, lr=lr)
+    s=s.cuda()
+    train_dialogs = pickle.load(open(train_pkl,'rb'))
+    valid_dialogs = pickle.load(open(valid_pkl,'rb'))
+    test_dialogs = pickle.load(open(test_pkl,'rb'))
+    s.run_train(train_dialogs, valid_dialogs, num_epochs=50, b_size=b_size, check_dir = check_dir)

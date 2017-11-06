@@ -8,6 +8,20 @@ d_size: hidden size of decoder
 l_size: size of latent variable
 """
 
+#hyper-parameters
+######################
+h_size=512#encoder hidden size
+c_size=1024#context hidden size
+d_size=512#decoder hidden size
+l_size=128#latent variable size
+b_size=128#batch size
+lr=0.0002#learning rate
+embed='./dataset/switchboard/embedding.mat'#pre-trained embedding
+train_pkl = './dataset/switchboard/train.pkl'#training set
+valid_pkl = './dataset/switchboard/valid.pkl'#validation set
+test_pkl = './dataset/switchboard/test.pkl'#validation set
+check_dir = './vhred'#check point file
+######################
 class vhred(base):
     def __init__(self, embeddings, h_size, c_size, d_size, l_size, lr=0.0002):
         super().__init__()
@@ -69,50 +83,52 @@ class vhred(base):
 
     #targets: max_len*batch_size
     #outputs: max_len*batch_size*vocab_size
-    def cost(self, targets, outputs, kl, loss=nn.CrossEntropyLoss()):
+    def cost(self, targets, outputs, kl):
         t_loss=0
+        loss = nn.CrossEntropyLoss(size_average=False, ignore_index=0)
         mask = (targets>0).float()
         t_len=torch.sum(mask)
         t_kl = torch.sum(kl)
         r_input = torch.cat((EOT*Variable(torch.ones((1, targets.size(1))).long()), targets[:-1, :]))
         num_eot = torch.sum((r_input==EOT).float())
         for i in range(targets.size(0)):
-            t_loss+=targets.size(1)*loss(outputs[i], targets[i])
-        return t_loss, t_loss/t_len, t_kl, t_kl/num_eot
+            t_loss+=loss(outputs[i], targets[i])
+        return t_loss, t_loss/t_len, t_kl, t_kl/num_eot, (t_loss+t_kl)/num_eot
 
     def validate(self, dataloader):
         t_loss = 0
         t_kl = 0
+        t_nll = 0
         for i, batch in enumerate(dataloader):
             inputs = Variable(batch.t())
-            print(inputs.size())
+            inputs = inputs.cuda()
             o, kl = self(inputs)
             c=self.cost(inputs, o, kl)
-            t_loss += c[1].data.numpy()
-            t_kl +=c[3].data.numpy()
-            print('[Validation]Mini-Batches run : %d\tBatch Loss: %f\tMean Loss: %f\tBatch KL: %f\tMean KL: %f' % (i+1, c[1].data.numpy(), t_loss / (i+1), c[3].data.numpy(), t_kl/(i+1)))
-        print('Final loss : %f\tkl: %f' % (t_loss/len(dataloader), t_kl/len(dataloader)))
-        return t_loss/len(dataloader), t_kl/len(dataloader)
+            t_loss += c[1].data.cpu().numpy()
+            t_kl +=c[3].data.cpu().numpy()
+            t_nll += c[4].data.cpu().numpy()
+            print('[Validation]Mini-Batches run : %d\tBatch Loss: %f\tMean Loss: %f\tBatch KL: %f\tMean KL: %f' % (i+1, c[1].data.cpu().numpy(), t_loss / (i+1), c[3].data.cpu().numpy(), t_kl/(i+1)))
+        print('Final loss : %f\tkl: %f\tnll: %f' % (t_loss/len(dataloader), t_kl/len(dataloader), t_nll/len(dataloader)))
+        with open('output.txt', 'a') as f:
+            f.write('Loss : %f\tkl: %f\tNLL: %f' % (t_loss/len(dataloader), t_kl/len(dataloader), t_nll/len(dataloader)))
+        return t_nll/len(dataloader)
 
-    def train(self, dataloader, epoch):
-        start = (epoch-1)*len(dataloader)+1
+    def train(self, dataloader):
+        epoch = 1+self.step.data.cpu().numpy()//len(dataloader)
         for i, batch in enumerate(dataloader):
             inputs = Variable(batch.t())
-            print(inputs.size())
+            inputs = inputs.cuda()
             o, kl = self(inputs)
             c=self.cost(inputs, o, kl)
-            print('[Training][Epoch: %d]Step : %d\tTotal Loss: %f\tMean Loss: %f\tTotal KL: %f\tMean KL: %f' % (epoch, start+i, c[0].data.numpy(), c[1].data.numpy(), c[2].data.numpy(), c[3].data.numpy()))
-            self.optimize(c[0]+c[2])
+            print('[Training][Epoch: %d]Step : %d\tTotal Loss: %f\tMean Loss: %f\tTotal KL: %f\tMean KL: %f' % (epoch, self.step.data.cpu().numpy(), c[0].data.cpu().numpy(), c[1].data.cpu().numpy(), c[2].data.cpu().numpy(), c[3].data.cpu().numpy()))
+            self.optimize(c[0])#+c[3])
 
 if __name__ == '__main__':
-    em=torch.ones((9,3))
-    s=vhred(em,3,3,3,1)
-    dialogs = [[1,2,3,4,0,5,6,7] for i in range(20)]
-    print(dialogs)
-    trained = dialogdata(dialogs)
-    validated = dialogdata(dialogs)
-    for epoch in range(1,10):
-        train_dataloader = DataLoader(trained, batch_size=6, shuffle=True)
-        valid_dataloader = DataLoader(trained, batch_size=6, shuffle=True)
-        s.train(train_dataloader, epoch)
-        s.validate(valid_dataloader)
+    torch.set_default_tensor_type('torch.cuda.FloatTensor')
+    em =torch.from_numpy(pickle.load(open(embed, 'rb'), encoding='latin1'))
+    s=vhred(em,h_size,c_size,d_size,l_size,lr)
+    s=s.cuda()
+    train_dialogs = pickle.load(open(train_pkl,'rb'))
+    valid_dialogs = pickle.load(open(valid_pkl,'rb'))
+    test_dialogs = pickle.load(open(test_pkl,'rb'))
+    s.run_train(train_dialogs, valid_dialogs, num_epochs=50, b_size=b_size, check_dir = check_dir)

@@ -1,14 +1,13 @@
 import torch 
 import torch.nn as nn
+import torch.nn.functional as F
 import numpy as np
 from torch.autograd import Variable
-import inspect
 from dataload import *
-
-USE_CUDA = True
+from helper import *
+import pickle
 
 EOT=2
-
 
 """
 masked: whether mask hidden states over sequences, default true
@@ -119,8 +118,7 @@ class GaussPara(nn.Module):
 class base(nn.Module):
     def __init__(self):
         super().__init__()
-        print('WTF')
-        print(inspect.getargspec(nn.CrossEntropyLoss))
+        self.step = Variable(torch.IntTensor([1]), requires_grad=False)
     
     #mask utterance as the state of the cloest forward one
     def mask_state(self, states, inputs):
@@ -146,13 +144,14 @@ class base(nn.Module):
     
     #targets: max_len*batch_size
     #outputs: max_len*batch_size*vocab_size
-    def cost(self, targets, outputs, loss=nn.CrossEntropyLoss()):
+    def cost(self, targets, outputs):
         t_loss=0
         mask = (targets>0).float()
         t_len=torch.sum(mask)
+        loss = nn.CrossEntropyLoss(size_average=False, ignore_index=0)
         for i in range(targets.size(0)):
-            t_loss+=targets.size(1)*loss(outputs[i], targets[i])
-        return t_loss, t_loss/t_len
+            t_loss+=loss(outputs[i], targets[i])
+        return t_loss,(t_loss/t_len)
 
     def optimize(self, loss):
         self.optim.zero_grad()
@@ -164,27 +163,40 @@ class base(nn.Module):
         t_loss = 0
         for i, batch in enumerate(dataloader):
             inputs = Variable(batch.t())
-            print(inputs.size())
+            inputs = inputs.cuda()
             c=self.cost(inputs, self(inputs))
-            t_loss += c[1].data.numpy()
-            print('[Validation]Mini-Batches run : %d\t\tBatch Loss: %f\t\tMean Loss: %f' % (i+1, c[1].data.numpy(), t_loss / (i+1)))
+            t_loss += c[1].data.cpu().numpy()
+            print('[Validation]Mini-Batches run : %d\t\tBatch Loss: %f\t\tMean Loss: %f' % (i+1, c[1].data.cpu().numpy(), t_loss / (i+1)))
         print('Final loss : %f' % (t_loss/len(dataloader)))
+        with open('output.txt', 'a') as f:
+            f.write('Loss : %f' % (t_loss/len(dataloader)))
         return t_loss/len(dataloader)
 
-    def train(self, dataloader, epoch):
-        start = (epoch-1)*len(dataloader)+1
+    def train(self, dataloader):
+        epoch = 1+self.step.data.cpu().numpy()//len(dataloader)
         for i, batch in enumerate(dataloader):
             inputs = Variable(batch.t())
-            print(inputs.size())
+            inputs = inputs.cuda()
             c=self.cost(inputs, self(inputs))
-            print('[Training][Epoch: %d]Step : %d\tTotal Loss: %f\tMean Loss: %f' % (epoch, start+i, c[0].data.numpy(), c[1].data.numpy()))
+            print('[Training][Epoch: %d]Step : %d\tTotal Loss: %f\tMean Loss: %f' % (epoch, self.step.data.cpu().numpy(), c[0].data.cpu().numpy(), c[1].data.cpu().numpy()))
             self.optimize(c[0])
+            self.step+=1
     
-    def run_train(self, train_dialogs, valid_dialogs, num_epochs, b_size):
+    def run_train(self, train_dialogs, valid_dialogs, num_epochs, b_size, check_dir):
         trained = dialogdata(train_dialogs)
         validated = dialogdata(valid_dialogs)
+        best_val_loss = None
+        start = time.time()
+
         for epoch in range(1,num_epochs+1):
             train_dataloader = DataLoader(trained, batch_size=b_size, shuffle=True)
             valid_dataloader = DataLoader(validated, batch_size=b_size, shuffle=True)
-            self.train(train_dataloader, epoch)
-            self.validate(valid_dataloader)
+            self.train(train_dataloader)
+            with open('output.txt', 'a') as f:
+                f.write('%s[Epoch:%d]' % (time_since(start, epoch / num_epochs), epoch))
+            l = self.validate(valid_dataloader)
+            if not best_val_loss or l < best_val_loss:
+                with open(check_dir+'/epoch'+str(epoch), 'wb') as f:
+                    torch.save(self, f)
+                best_val_loss = l
+
