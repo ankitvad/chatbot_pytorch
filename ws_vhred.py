@@ -80,7 +80,7 @@ class vhred(base):
             c_m = current_mask[i]
             c_m.data.unsqueeze_(1)
             
-            d_hidden, o = self.decoder(inputs[i], d_hidden, torch.cat((cs[i], reconstructed), 1), c_m)
+            d_hidden, o = self.decoder(c_inputs[i], d_hidden, torch.cat((cs[i], reconstructed), 1), c_m)
             outputs.append(o)
         return outputs, kl, r_loss#outputs: max_len*batch_size*vocab_size; kl&r_loss: max_len*batch_size
 

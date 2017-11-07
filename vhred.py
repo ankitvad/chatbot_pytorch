@@ -77,7 +77,7 @@ class vhred(base):
             c_kl = self.kl(post_mu, pri_mu, post_cov, pri_cov)
             kl[i] = c_kl*(1-current_mask[i])
             
-            d_hidden, o = self.decoder(inputs[i], d_hidden, torch.cat((cs[i], post_z), 1), c_m)
+            d_hidden, o = self.decoder(c_inputs[i], d_hidden, torch.cat((cs[i], post_z), 1), c_m)
             outputs.append(o)
         return outputs, kl#outputs: max_len*batch_size*vocab_size; kl: max_len*batch_size
 
@@ -95,7 +95,7 @@ class vhred(base):
             t_loss+=loss(outputs[i], targets[i])
         return t_loss, t_loss/t_len, t_kl, t_kl/num_eot, (t_loss+t_kl)/num_eot
 
-    def validate(self, dataloader):
+    def validate(self, dataloader, check_dir):
         t_loss = 0
         t_kl = 0
         t_nll = 0
@@ -109,8 +109,8 @@ class vhred(base):
             t_nll += c[4].data.cpu().numpy()
             print('[Validation]Mini-Batches run : %d\tBatch Loss: %f\tMean Loss: %f\tBatch KL: %f\tMean KL: %f' % (i+1, c[1].data.cpu().numpy(), t_loss / (i+1), c[3].data.cpu().numpy(), t_kl/(i+1)))
         print('Final loss : %f\tkl: %f\tnll: %f' % (t_loss/len(dataloader), t_kl/len(dataloader), t_nll/len(dataloader)))
-        with open('output.txt', 'a') as f:
-            f.write('Loss : %f\tkl: %f\tNLL: %f' % (t_loss/len(dataloader), t_kl/len(dataloader), t_nll/len(dataloader)))
+        with open(check_dir+'/output.txt', 'a') as f:
+            f.write('Loss : %f\tkl: %f\tNLL: %f\n' % (t_loss/len(dataloader), t_kl/len(dataloader), t_nll/len(dataloader)))
         return t_nll/len(dataloader)
 
     def train(self, dataloader):
@@ -121,7 +121,7 @@ class vhred(base):
             o, kl = self(inputs)
             c=self.cost(inputs, o, kl)
             print('[Training][Epoch: %d]Step : %d\tTotal Loss: %f\tMean Loss: %f\tTotal KL: %f\tMean KL: %f' % (epoch, self.step.data.cpu().numpy(), c[0].data.cpu().numpy(), c[1].data.cpu().numpy(), c[2].data.cpu().numpy(), c[3].data.cpu().numpy()))
-            self.optimize(c[0])#+c[3])
+            self.optimize(c[0]+c[3]*self.step/25000)
 
 if __name__ == '__main__':
     torch.set_default_tensor_type('torch.cuda.FloatTensor')

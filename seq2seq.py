@@ -46,7 +46,7 @@ class seq2seq(base):
             e_hidden = self.encoder(c_inputs[i], e_hidden)
             c_m = current_mask[i]
             c_m.data.unsqueeze_(1)
-            d_hidden, o = self.decoder(inputs[i], d_hidden, e_hidden, c_m)
+            d_hidden, o = self.decoder(c_inputs[i], d_hidden, e_hidden, c_m)
             outputs.append(o)
         return outputs#max_len*batch_size*vocab_size
 
@@ -70,7 +70,7 @@ class seq2seq(base):
 
         
 if __name__ == '__main__':
-    torch.set_default_tensor_type('torch.cuda.FloatTensor')
+    torch.set_default_tensor_type('torch.cuda.floattensor')
     em =torch.from_numpy(pickle.load(open(embed, 'rb'), encoding='latin1'))
     s=seq2seq(em,h_size,d_size,lr)
     s=s.cuda()

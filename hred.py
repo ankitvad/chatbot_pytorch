@@ -54,7 +54,7 @@ class hred(base):
             c_m = current_mask[i]
             c_m.data.unsqueeze_(1)
             c_hidden = self.crnn(e_hidden, c_hidden, c_m)
-            d_hidden, o = self.decoder(inputs[i], d_hidden, c_hidden, c_m)
+            d_hidden, o = self.decoder(c_inputs[i], d_hidden, c_hidden, c_m)
             outputs.append(o)
         return outputs#max_len*batch_size*vocab_size
 

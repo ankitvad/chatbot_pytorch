@@ -37,7 +37,7 @@ class lm(base):
     #inputs: max_len*batch_size, Variable
     def forward(self, inputs):
         max_len, batch_size = inputs.size()
-        d_hidden = Variable(torch.zeros(batch_size, self.decoder.hidden_size))
+        d_hidden = Variable(torch.zeros(self.batch_size, self.decoder.hidden_size))
         c_inputs = torch.cat((EOT*Variable(torch.ones((1, batch_size)).long()), inputs[:-1, :]))
         current_mask = (c_inputs!=EOT).float()
         outputs=[]
@@ -45,12 +45,31 @@ class lm(base):
             c_m = current_mask[i]
             c_m.data.unsqueeze_(1)
             if self.independence:
-                d_hidden, o = self.decoder(inputs[i], d_hidden, 0, c_m)
+                d_hidden, o = self.decoder(c_inputs[i], d_hidden, 0, c_m)
             else:
-                d_hidden, o = self.decoder(inputs[i], d_hidden)
+                d_hidden, o = self.decoder(c_inputs[i], d_hidden)
             outputs.append(o)
         return outputs#max_len*batch_size*vocab_size
     
+    def decode(self, inputs, decode_length = 15):
+        length = inputs.size()[0]
+        d_hidden = Variable(torch.zeros(1, self.decoder.hidden_size))
+        for i in range(length):
+            d_hidden, o = self.decoder(inputs[i], d_hidden)
+        decoder_outputs = []
+        
+        for i in range(decode_length):
+            decoder_output = F.log_softmax(o)
+            topv, topi = decoder_output.data.topk(1)
+            ni = topi[0][0]
+            if ni == EOT: break
+            decoder_outputs.append(ni)
+            decoder_input = Variable(torch.LongTensor([[ni]]))
+            decoder_input = decoder_input.cuda()
+            d_hidden, o = self.decoder(decoder_input, d_hidden)
+        return decoder_outputs
+
+
 if __name__ == '__main__':
     torch.set_default_tensor_type('torch.cuda.FloatTensor')
     em =torch.from_numpy(pickle.load(open(embed, 'rb'), encoding='latin1'))

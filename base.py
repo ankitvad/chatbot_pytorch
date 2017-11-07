@@ -87,8 +87,8 @@ class DecoderRNN(nn.Module):
         else:
             inputs = self.embedding(input_word)
         new_h = self.gru(inputs, hidden)#batch_size*hidden_size
-        output1 = self.tanh(self.decode1(new_h))
-        output2 = self.tanh(self.decode2(output1))#batch_size*vocab_size
+        output1 = (self.decode1(new_h))
+        output2 = (self.decode2(output1))#batch_size*vocab_size
         return new_h, output2
 
 """
@@ -158,8 +158,9 @@ class base(nn.Module):
         loss.backward()
         torch.nn.utils.clip_grad_norm(self.parameters(), 5)
         self.optim.step()
+        self.step+=1
     
-    def validate(self, dataloader):
+    def validate(self, dataloader, check_dir):
         t_loss = 0
         for i, batch in enumerate(dataloader):
             inputs = Variable(batch.t())
@@ -168,8 +169,8 @@ class base(nn.Module):
             t_loss += c[1].data.cpu().numpy()
             print('[Validation]Mini-Batches run : %d\t\tBatch Loss: %f\t\tMean Loss: %f' % (i+1, c[1].data.cpu().numpy(), t_loss / (i+1)))
         print('Final loss : %f' % (t_loss/len(dataloader)))
-        with open('output.txt', 'a') as f:
-            f.write('Loss : %f' % (t_loss/len(dataloader)))
+        with open(check_dir+'/output.txt', 'a') as f:
+            f.write('Loss : %f\n' % (t_loss/len(dataloader)))
         return t_loss/len(dataloader)
 
     def train(self, dataloader):
@@ -180,7 +181,6 @@ class base(nn.Module):
             c=self.cost(inputs, self(inputs))
             print('[Training][Epoch: %d]Step : %d\tTotal Loss: %f\tMean Loss: %f' % (epoch, self.step.data.cpu().numpy(), c[0].data.cpu().numpy(), c[1].data.cpu().numpy()))
             self.optimize(c[0])
-            self.step+=1
     
     def run_train(self, train_dialogs, valid_dialogs, num_epochs, b_size, check_dir):
         trained = dialogdata(train_dialogs)
@@ -192,9 +192,9 @@ class base(nn.Module):
             train_dataloader = DataLoader(trained, batch_size=b_size, shuffle=True)
             valid_dataloader = DataLoader(validated, batch_size=b_size, shuffle=True)
             self.train(train_dataloader)
-            with open('output.txt', 'a') as f:
+            with open(check_dir+'/output.txt', 'a') as f:
                 f.write('%s[Epoch:%d]' % (time_since(start, epoch / num_epochs), epoch))
-            l = self.validate(valid_dataloader)
+            l = self.validate(valid_dataloader, check_dir)
             if not best_val_loss or l < best_val_loss:
                 with open(check_dir+'/epoch'+str(epoch), 'wb') as f:
                     torch.save(self, f)
